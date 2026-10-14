@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "serenibrain-th21a-ble"
+version = "0.1.0"
+description = "Read the SereniBrain TH21A EEG headband over Bluetooth LE, without the vendor app"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+dependencies = ["bleak>=0.21"]
+keywords = ["eeg", "bluetooth", "ble", "serenibrain", "neurofeedback", "biofeedback"]
+classifiers = ["License :: OSI Approved :: MIT License", "Programming Language :: Python :: 3",
+               "Topic :: Scientific/Engineering :: Medical Science Apps."]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+th21a = "th21a.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/gweber/serenibrain-th21a-ble"
+
+[tool.setuptools]
+packages = ["th21a"]
