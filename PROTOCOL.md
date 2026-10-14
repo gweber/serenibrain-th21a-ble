@@ -28,7 +28,7 @@ Every command is 8 bytes: ASCII `CTRL`, then two big-endian 16-bit words `group,
 | Bytes after `CTRL` | Meaning |
 |---|---|
 | `00 03 00 05` | get device info (answer: an INFO packet) |
-| `00 04 00 01` | self-check |
+| `00 04 00 01` | self-check (answer: an INFO packet whose payload carries `OK`) |
 | `00 03 00 03` | **start** streaming |
 | `00 03 00 04` | **stop** streaming |
 | `00 04 00 02` | calibrate the gyroscope |
