@@ -26,6 +26,7 @@ th21a scan                  # find the headband
 th21a info                  # model as the headband reports it
 th21a check                 # 10 s electrode-contact check
 th21a stream --seconds 60 > session.csv   # time,counter,value,marker,battery_mv
+th21a analyze session.csv   # artifact labels per 2 s and scale-free features (offline)
 ```
 
 `th21a check` prints a verdict: **NO CONTACT** (the amplifier input sits at the rail — band off, or a pad missing),
@@ -36,6 +37,38 @@ counts from one headband; `hum_vs_near` (the mains line against its neighbouring
 In `th21a stream`, `time` comes from the sample counter, not from when the Bluetooth packet arrived: samples are 4 ms
 apart, anchored to the arrival of the first packet. A dropped notification leaves a hole in `time` and `counter`
 and is reported on stderr (`gap: 10 samples missing before counter …`), with a summary at the end.
+
+### Analysing a recording
+
+`th21a analyze session.csv` splits the recording into 2-second blocks and labels each one, then computes spectral
+features over the clean blocks:
+
+```
+blocks       off 1  gap 1  muscle 1  eye 1  clean 36
+timeline     one mark per 2 s: o off, g gap, m muscle, e eye, . clean
+    0 min    ..........e.........m.........o....g....
+clean_blocks       36
+rel_delta          0.556
+rel_theta          0.199
+rel_alpha          0.109
+rel_beta           0.136
+theta_beta         1.46
+alpha_theta        0.55
+aperiodic_exponent 1.47
+```
+
+(Synthetic 80 s test recording with a blink, a clench, a rail block and a dropped notification planted at
+known places; from `tests/test_analysis.py`.)
+
+- **Labels** (after the single-channel artifact approach in [arXiv:2509.26058](https://arxiv.org/abs/2509.26058)):
+  *eye* = unusual power at 1–4 Hz (blinks, eye movements), *muscle* = unusual power at 20–100 Hz (forehead, jaw;
+  mains left out), *off* = input at the rail, *gap* = a dropped notification. "Unusual" means several times the
+  recording's median block, so the labels need no microvolt scale, but the median block has to be clean: start a
+  recording with half a minute of sitting still. The thresholds are starting points, not validated on many people.
+- **Features** are the ones an unknown gain cannot change: band powers as a share of 1–30 Hz, theta/beta,
+  alpha/theta, and the aperiodic (1/f) exponent fitted over 2–30 Hz without the alpha range. They come from the
+  averaged spectrum of the clean blocks; with fewer than ~10 clean blocks (20 s) they are too noisy to read.
+- `--blocks` prints one CSV line per block (start, label, eye and muscle ratios) for your own plots.
 
 ## Python
 

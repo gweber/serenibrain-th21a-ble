@@ -2,7 +2,7 @@
 from .protocol import (CALIBRATE_GYRO, CONTROL, GET_INFO, NOTIFY, SAMPLING_RATE, SELF_CHECK, SERVICE, START, STOP,
                        EEGPacket, InfoPacket, PacketError, Sample, command, mark, parse)
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 __all__ = ["CALIBRATE_GYRO", "CONTROL", "GET_INFO", "NOTIFY", "SAMPLING_RATE", "SELF_CHECK", "SERVICE", "START", "STOP",
            "EEGPacket", "InfoPacket", "PacketError", "Sample", "command", "mark", "parse", "Headband", "find"]
 

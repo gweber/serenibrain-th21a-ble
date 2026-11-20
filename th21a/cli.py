@@ -1,14 +1,15 @@
-"""th21a scan | info | stream | check -- see README.md."""
+"""th21a scan | info | stream | check | analyze -- see README.md."""
 from __future__ import annotations
 
 import argparse
 import asyncio
+import csv
 import math
 import sys
 import time
 
 from . import protocol as p
-from .timing import sample_time
+from .timing import SampleClock, sample_time
 
 
 def goertzel_power(xs, freq, rate=p.SAMPLING_RATE):
@@ -120,6 +121,45 @@ async def check(args):
         print("%-12s %s" % (k, v))
 
 
+MARKS = {"off": "o", "gap": "g", "muscle": "m", "eye": "e", "clean": "."}
+
+
+def load_csv(path):
+    """Values and unwrapped sample numbers from a `th21a stream` CSV."""
+    clock, values, index = SampleClock(), [], []
+    with open(path, newline="") as f:
+        for row in csv.DictReader(f):
+            values.append(int(row["value"]))
+            index.append(clock.feed(int(row["counter"])))
+    return values, index
+
+
+def analyze(args):
+    """Block labels and scale-free features of a recorded session (offline, no Bluetooth)."""
+    from .features import features
+    from .quality import label_blocks, summary
+    values, index = load_csv(args.csv)
+    blocks = label_blocks(values, index, mains=args.mains)
+    if not blocks:
+        sys.exit("too short: a block is 512 samples (2 s)")
+    if args.blocks:
+        print("start_s,label,eye,muscle")
+        for b in blocks:
+            print("%.2f,%s,%s,%s" % (index[b.start] / p.SAMPLING_RATE, b.label,
+                                     "" if b.eye is None else round(b.eye, 2), "" if b.muscle is None else round(b.muscle, 2)))
+        return
+    print("blocks       %s" % "  ".join("%s %d" % kv for kv in summary(blocks).items()))
+    marks = "".join(MARKS[b.label] for b in blocks)
+    print("timeline     one mark per 2 s: %s" % ", ".join("%s %s" % (m, k) for k, m in MARKS.items()))
+    for i in range(0, len(marks), 60):          # 60 marks = 2 minutes per line
+        print("  %3d min    %s" % (i // 30, marks[i:i + 60]))
+    feats = features(blocks)
+    if feats is None:
+        print("features     none: no clean block")
+    for k, v in (feats or {}).items():
+        print("%-18s %s" % (k, v))
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="th21a", description=__doc__)
     ap.add_argument("--address", help="Bluetooth address (default: the first TH21A found)")
@@ -130,7 +170,13 @@ def main(argv=None):
     s = sub.add_parser("check", help="electrode contact check")
     s.add_argument("--seconds", type=float, default=10); s.add_argument("--mains", type=int, default=50, choices=(50, 60))
     s.set_defaults(fn=check)
+    s = sub.add_parser("analyze", help="artifact labels and scale-free features of a recorded CSV")
+    s.add_argument("csv"); s.add_argument("--mains", type=int, default=50, choices=(50, 60))
+    s.add_argument("--blocks", action="store_true", help="one CSV line per 2 s block instead of the summary")
+    s.set_defaults(fn=analyze)
     args = ap.parse_args(argv)
+    if args.fn is analyze:
+        return analyze(args)
     try:
         asyncio.run(args.fn(args))
     except KeyboardInterrupt:

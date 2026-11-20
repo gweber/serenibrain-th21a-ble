@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "serenibrain-th21a-ble"
-version = "0.2.0"
+version = "0.3.0"
 description = "Read the SereniBrain TH21A EEG headband over Bluetooth LE, without the vendor app"
 readme = "README.md"
 license = {text = "MIT"}
