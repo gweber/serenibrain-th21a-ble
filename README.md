@@ -29,7 +29,13 @@ th21a stream --seconds 60 > session.csv   # time,counter,value,marker,battery_mv
 ```
 
 `th21a check` prints a verdict: **NO CONTACT** (the amplifier input sits at the rail — band off, or a pad missing),
-**POOR** / **FAIR** (mains hum — the hydrogel pads are drying out), or **GOOD**.
+**POOR** / **FAIR** (mains hum — the hydrogel pads are drying out), **NOISY** (broad-band noise without a mains line
+standing out: movement or a loose band, so it says nothing about the pads), or **GOOD**. The hum thresholds are raw
+counts from one headband; `hum_vs_near` (the mains line against its neighbouring frequencies) is scale-free.
+
+In `th21a stream`, `time` comes from the sample counter, not from when the Bluetooth packet arrived: samples are 4 ms
+apart, anchored to the arrival of the first packet. A dropped notification leaves a hole in `time` and `counter`
+and is reported on stderr (`gap: 10 samples missing before counter …`), with a summary at the end.
 
 ## Python
 
@@ -43,7 +49,7 @@ async def main():
         n = 0
         async for packet in band.stream():          # ~25 packets a second, 10 samples each
             for s in packet.samples:
-                print(s.counter, s.value, s.marker)
+                print(s.index, s.counter, s.value, s.marker)   # index: the counter unwrapped, 0, 1, 2, ...
             n += 1
             if n == 50:
                 await band.mark(1)                  # lands in the marker byte of the next sample
@@ -52,6 +58,9 @@ async def main():
 
 asyncio.run(main())
 ```
+
+`band.clock.lost` / `band.clock.gaps` count samples missing from the counter (dropped notifications); `band.errors`
+counts packets that did not parse.
 
 The parser alone needs no Bluetooth: `th21a.parse(bytes)` returns an `EEGPacket` or `InfoPacket`.
 

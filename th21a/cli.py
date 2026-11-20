@@ -8,6 +8,7 @@ import sys
 import time
 
 from . import protocol as p
+from .timing import sample_time
 
 
 def goertzel_power(xs, freq, rate=p.SAMPLING_RATE):
@@ -20,25 +21,35 @@ def goertzel_power(xs, freq, rate=p.SAMPLING_RATE):
     return (s1 * s1 + s2 * s2 - k * s1 * s2) / len(xs) ** 2
 
 
+LINE_RATIO = 3   # the mains bin must be this many times its neighbours (amplitude) to count as hum
+
+
 def contact_report(xs, mains=50):
     """A rough electrode-contact check on a few seconds of samples.
 
     The hum thresholds (RMS, raw counts) come from one headband: dried-out pads gave ~1100, re-moistened ones 750-800,
-    and soaking them overnight cut the hum power by a further factor of ~6. Treat them as a guide, not a spec."""
+    and soaking them overnight cut the hum power by a further factor of ~6. Treat them as a guide, not a spec.
+
+    `hum_vs_near` (the mains line against the bins 4-6 Hz beside it) does not depend on the unknown counts-to-microvolt
+    scale. A pad problem shows up as a narrow line; if the mains bin is no higher than its neighbours, the energy there
+    is broad-band (movement, a loose band) and says nothing about the pads, so POOR/FAIR need the line to stand out."""
     sat = sum(1 for x in xs if x >= p.ADC_MAX or x <= p.ADC_MIN) / len(xs)
     mean = sum(xs) / len(xs)
     sd = math.sqrt(sum((x - mean) ** 2 for x in xs) / len(xs))
     hum = math.sqrt(2 * goertzel_power(xs, mains))
     near = sum(math.sqrt(2 * goertzel_power(xs, f)) for f in (mains - 6, mains - 4, mains + 4, mains + 6)) / 4
+    ratio = hum / max(near, 1e-9)
     if sat > 0.01:
         verdict = "NO CONTACT: the input sits at the rail (band off the head, or a pad missing)"
+    elif hum > 400 and ratio < LINE_RATIO:
+        verdict = "NOISY: broad-band noise, not mains hum -- keep still and check the band's fit, then check again"
     elif hum > 1000:
         verdict = "POOR: strong mains hum -- moisten or replace the hydrogel pads, tighten the band"
     elif hum > 400:
         verdict = "FAIR: noticeable mains hum -- usable with a notch filter; fresher pads help"
     else:
         verdict = "GOOD"
-    return {"saturated": round(sat, 3), "sd_counts": round(sd), "hum_rms_counts": round(hum), "hum_vs_near": round(hum / max(near, 1e-9)),
+    return {"saturated": round(sat, 3), "sd_counts": round(sd), "hum_rms_counts": round(hum), "hum_vs_near": round(ratio, 1),
             "verdict": verdict}
 
 
@@ -69,14 +80,31 @@ async def info(args):
 async def stream(args):
     from .client import Headband
     async with Headband(await _device(args)) as band:
+        # time comes from the sample counter (evenly spaced at 250 Hz), anchored to when the first packet arrived;
+        # arrival times would give 10 equal stamps per notification and BLE jitter.
         print("time,counter,value,marker,battery_mv")
         end = time.time() + args.seconds if args.seconds else None
+        t0, lost = None, 0
         async for pkt in band.stream():
             t = time.time()
+            if t0 is None:
+                t0 = t - pkt.samples[-1].index / p.SAMPLING_RATE
+            if band.clock.lost > lost:
+                print("gap: %d samples missing before counter %d" % (band.clock.lost - lost, pkt.samples[0].counter),
+                      file=sys.stderr)
+                lost = band.clock.lost
             for s in pkt.samples:
-                print("%.3f,%d,%d,%d,%d" % (t, s.counter, s.value, s.marker, pkt.battery_mv))
+                print("%.4f,%d,%d,%d,%d" % (sample_time(s.index, t0), s.counter, s.value, s.marker, pkt.battery_mv))
             if end and t > end:
                 break
+        _summary(band)
+
+
+def _summary(band):
+    c = band.clock
+    if c.lost or c.glitches or band.errors:
+        print("%d samples lost in %d gaps, %d repeated/out-of-order, %d bad packets"
+              % (c.lost, c.gaps, c.glitches, band.errors), file=sys.stderr)
 
 
 async def check(args):
@@ -87,6 +115,7 @@ async def check(args):
             xs += [s.value for s in pkt.samples]
             if time.time() > end:
                 break
+        _summary(band)
     for k, v in contact_report(xs[250:] or xs, args.mains).items():     # the first second settles
         print("%-12s %s" % (k, v))
 

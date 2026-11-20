@@ -56,6 +56,7 @@ class Sample:
     marker: int         # 0, or the value of a mark() command
     counter: int        # running sample number, wraps at 65536
     aux: int = 0        # unknown byte, 0 in every capture so far
+    index: int | None = None   # the counter unwrapped (0, 1, 2, ... from the first sample); set by Headband.stream()
 
     @property
     def saturated(self) -> bool:

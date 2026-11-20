@@ -7,6 +7,7 @@ from collections.abc import AsyncIterator
 from bleak import BleakClient, BleakScanner
 
 from . import protocol as p
+from .timing import SampleClock
 
 
 async def find(timeout: float = 20.0):
@@ -26,7 +27,8 @@ class Headband:
     def __init__(self, device, timeout: float = 25.0):
         self._client = BleakClient(device, timeout=timeout)
         self._queue: asyncio.Queue = asyncio.Queue()
-        self.errors = 0
+        self.errors = 0                # packets that did not parse
+        self.clock = SampleClock()     # clock.gaps / clock.lost: samples missing from the counter
 
     async def __aenter__(self):
         await self._client.connect()
@@ -66,10 +68,15 @@ class Headband:
         await self.send(p.mark(value))
 
     async def stream(self) -> AsyncIterator[p.EEGPacket]:
-        """Start streaming and yield EEG packets (25 a second, 10 samples each) until the caller stops iterating."""
+        """Start streaming and yield EEG packets (25 a second, 10 samples each) until the caller stops iterating.
+
+        Each sample gets `index`, its running number from the unwrapped counter. A dropped notification shows up as a
+        jump in `index` and in `self.clock.gaps` / `self.clock.lost`; samples are never silently joined across it."""
         await self.send(p.SELF_CHECK)
         await self.send(p.START)
         while True:
             pkt = await self._queue.get()
             if isinstance(pkt, p.EEGPacket):
+                for s in pkt.samples:
+                    s.index = self.clock.feed(s.counter)
                 yield pkt

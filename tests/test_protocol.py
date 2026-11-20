@@ -64,3 +64,16 @@ def test_contact_report():
     assert r["verdict"].startswith("POOR") and 2100 < r["hum_rms_counts"] < 2140      # RMS of a 3000-count tone
     quiet = [170000 + 100 * math.sin(2 * math.pi * 50 * i / 250) for i in range(2500)]
     assert contact_report(quiet)["verdict"] == "GOOD"
+
+
+def test_contact_report_needs_a_line_to_call_it_hum():
+    # broad-band noise loud enough to pass the absolute thresholds, but no 50 Hz line standing out
+    import random
+    rng = random.Random(1)
+    noise = [170000 + rng.gauss(0, 60000) for _ in range(2500)]
+    r = contact_report(noise)
+    assert r["hum_rms_counts"] > 1000 and r["hum_vs_near"] < 3 and r["verdict"].startswith("NOISY")
+    # the same noise with a strong hum line on top is pad trouble again
+    import math
+    hummy = [x + 30000 * math.sin(2 * math.pi * 50 * i / 250) for i, x in enumerate(noise)]
+    assert contact_report(hummy)["verdict"].startswith("POOR")
